@@ -1,0 +1,19 @@
+.firefox-zoom-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.firefox-zoom-controls button {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    flex: 0 0 44px;
+}
+
+.firefox-zoom-controls output {
+    width: 5ch;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}

@@ -265,8 +265,13 @@ services:
 ## Persistent Web Pages
 
 本分支的 `Dockerfile.hanging` 基于固定的官方镜像 `jlesage/firefox:v26.09.1`
-及其 Docker Hub manifest SHA256，只叠加启动脚本修复，不重新编译 Firefox、
+及其 Docker Hub manifest SHA256，叠加启动脚本及网页触摸、鼠标修复，不重新编译 Firefox、
 NSPR 和 GUI。原始 `Dockerfile` 保留为完整源码构建入口。
+
+网页客户端支持双指缩放整个桌面，放大后可双指平移；侧栏提供放大、缩小和
+适配桌面按钮。触摸取消或切到后台时会释放鼠标按键并重置手势，避免残留拖动。
+这些修改在镜像构建时从 `rootfs/opt/noVNC/app/` 注入，两个 Dockerfile 均会检查
+网页入口是否成功应用修复；不是部署后手动修改容器。
 
 本地构建和启动：
 
@@ -280,7 +285,7 @@ docker compose up -d --build
 
 ### GitHub 构建
 
-推送到仓库默认分支后，Actions 会先运行脚本测试、校验 Compose，再执行
+推送到仓库默认分支后，Actions 会先运行启动脚本和网页输入测试、校验 Compose，再执行
 amd64 容器启动检查。全部通过后，发布四种架构的
 `ghcr.io/<仓库所有者>/<仓库名>:latest` 和 `:sha-<提交前12位>`。
 推送 `v*` 标签会发布去掉开头 `v` 的版本标签，不覆盖 `latest`；

@@ -207,6 +207,7 @@ test("all runtime shell entry points pass the shell syntax check", () => {
         "rootfs/etc/services.d/app/kill",
         "rootfs/etc/services.d/firefox-logrotate/run",
         "rootfs/usr/share/firefox-tools/healthcheck.sh",
+        "rootfs/usr/share/firefox-tools/install-web-input.sh",
         "src/nspr/build.sh",
     ]) {
         const result = spawnSync(shell, ["-n"], {

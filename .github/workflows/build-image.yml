@@ -24,7 +24,7 @@ jobs:
       - name: Test startup scripts
         env:
           FIREFOX_TEST_TMPDIR: ${{ runner.temp }}/firefox-tests
-        run: node --test tests/runtime.test.mjs
+        run: node --test tests/*.test.mjs
       - name: Validate Compose
         run: docker compose config --quiet
 
@@ -111,7 +111,7 @@ jobs:
             exit 1
           fi
           docker exec firefox-smoke sh -c \
-            'test -L /etc/machine-id && test -x /etc/services.d/firefox-logrotate/run && test -f /config/profile/prefs.js'
+            'test -L /etc/machine-id && test -x /etc/services.d/firefox-logrotate/run && test -f /config/profile/prefs.js && grep -q "installFirefoxInput(UI)" /opt/noVNC/index.html && test -f /opt/noVNC/app/firefox-input.js'
           docker exec --user 1000:1000 firefox-smoke /etc/services.d/firefox-logrotate/run
           docker stats --no-stream \
             --format 'CPU={{.CPUPerc}} MEM={{.MemUsage}} PIDS={{.PIDs}}' firefox-smoke
