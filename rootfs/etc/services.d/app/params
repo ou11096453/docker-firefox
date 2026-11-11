@@ -17,13 +17,31 @@ fi
 
 # Custom arguments.
 if [ -n "${FF_CUSTOM_ARGS:-}" ]; then
-    eval 'for word in '$FF_CUSTOM_ARGS'; do echo "$word"; done'
+    awk -f /usr/share/firefox-tools/parse-args.awk
 fi
 
 # URL to open.
 # NOTE: This should be the last argument.
 if [ -n "${FF_OPEN_URL:-}" ]; then
-    echo "$FF_OPEN_URL" | tr '|' '\n'
+    awk '
+        BEGIN {
+            urls = ENVIRON["FF_OPEN_URL"]
+            if (urls ~ /[\r\n]/) {
+                print "ERROR: FF_OPEN_URL must not contain line breaks." > "/dev/stderr"
+                exit 1
+            }
+            count = split(urls, items, "|")
+            for (i = 1; i <= count; i++) {
+                if (items[i] ~ /^-/) {
+                    print "ERROR: FF_OPEN_URL must contain URLs, not options." > "/dev/stderr"
+                    exit 1
+                }
+            }
+            for (i = 1; i <= count; i++) {
+                if (items[i] != "") print items[i]
+            }
+        }
+    '
 fi
 
 # vim:ft=sh:ts=4:sw=4:et:sts=4

@@ -1,0 +1,49 @@
+services:
+  firefox:
+    image: ${FIREFOX_IMAGE:-firefox-hanging:local}
+    build:
+      context: .
+      dockerfile: Dockerfile.hanging
+      args:
+        FIREFOX_BASE_IMAGE: ${FIREFOX_BASE_IMAGE:-jlesage/firefox:v26.09.1@sha256:302aa068dcfa46a2d248771c998f67377383554df8940252caef42b99c13eb65}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    shm_size: 256m
+    mem_limit: 1g
+    cpus: 1.5
+    pids_limit: 512
+    ports:
+      - "${FIREFOX_BIND_IP:-127.0.0.1}:${FIREFOX_PORT:-5800}:5800"
+    volumes:
+      - firefox_config:/config:rw
+    environment:
+      USER_ID: ${USER_ID:-1000}
+      GROUP_ID: ${GROUP_ID:-1000}
+      TZ: ${TZ:-Asia/Shanghai}
+      KEEP_APP_RUNNING: "1"
+      DISPLAY_WIDTH: ${DISPLAY_WIDTH:-1280}
+      DISPLAY_HEIGHT: ${DISPLAY_HEIGHT:-720}
+      FF_OPEN_URL: ${FF_OPEN_URL:-}
+      FF_KIOSK: ${FF_KIOSK:-0}
+      FF_CUSTOM_ARGS: ${FF_CUSTOM_ARGS:-}
+      WEB_AUDIO: "0"
+      WEB_FILE_MANAGER: "0"
+      WEB_TERMINAL: "0"
+      WEB_NOTIFICATION: "0"
+      VNC_LISTENING_PORT: "-1"
+      SECURE_CONNECTION: ${SECURE_CONNECTION:-0}
+      WEB_AUTHENTICATION: ${WEB_AUTHENTICATION:-0}
+    healthcheck:
+      test: ["CMD-SHELL", "xdotool search --onlyvisible --class firefox >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+volumes:
+  firefox_config:

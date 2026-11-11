@@ -64,7 +64,9 @@ xx-apk --no-cache --no-scripts add \
 #
 log "Downloading NSPR sources..."
 mkdir /tmp/nspr
-curl -# -L -f "$NSPR_URL" | tar xz --strip 1 -C /tmp/nspr
+curl --fail --location --retry 3 --connect-timeout 30 --max-time 300 \
+    --output /tmp/nspr.tar.gz "$NSPR_URL"
+tar xz --strip 1 -C /tmp/nspr -f /tmp/nspr.tar.gz
 
 #
 # Compile NSPR.

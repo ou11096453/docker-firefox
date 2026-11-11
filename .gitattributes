@@ -1,0 +1,5 @@
+*.sh text eol=lf
+*.awk text eol=lf
+Dockerfile* text eol=lf
+rootfs/etc/services.d/** text eol=lf
+rootfs/etc/cont-env.d/** text eol=lf

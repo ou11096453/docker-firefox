@@ -1,165 +1,149 @@
-name: Docker image CI/CD
+name: Build Firefox image
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  DOCKER_IMAGE_NAME: jlesage/firefox
-  PLATFORMS: linux/amd64,linux/386,linux/arm/v7,linux/arm64/v8
-
-on:
-  push:
-    branches: '*'
-    tags:
-      - v[0-9][0-9].[0-9][0-9].[0-9]+
-      - v[0-9][0-9].[0-9][0-9].[0-9]+-pre.[0-9]+
-  pull_request:
+permissions:
+  contents: read
 
 jobs:
-  build:
-    name: Build image
+  test:
     runs-on: ubuntu-22.04
-
     steps:
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
+      - uses: actions/checkout@v6
         with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: false
+          persist-credentials: false
+      - name: Test startup scripts
+        env:
+          FIREFOX_TEST_TMPDIR: ${{ runner.temp }}/firefox-tests
+        run: node --test tests/runtime.test.mjs
+      - name: Validate Compose
+        run: docker compose config --quiet
 
-      - name: Prepare
+  build:
+    needs: test
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Prepare image tags
         id: prep
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
         run: |
-          # Determine the Docker container version.
-          VERSION=unknown
-          if [[ $GITHUB_REF =~ refs/tags/* ]]; then
-            # Git tag pushed: use tag as the version.
-            VERSION=${GITHUB_REF#refs/tags/}
-          elif [[ $GITHUB_REF =~ refs/heads/* ]]; then
-            # Git commit pushed: use the commit SHA as the version.
-            VERSION=${GITHUB_SHA::8}
-          elif [[ $GITHUB_REF =~ refs/pull/* ]]; then
-            # Pull request: use PR number as the version.
-            VERSION=pr-${{ github.event.number }}
-          else
-            echo "::error::Unexpected GITHUB_REF: $GITHUB_REF"
-            exit 1
-          fi
-          # Determine the version to put in container label.
-          LABEL_VERSION=${VERSION}
-          if [[ $GITHUB_REF =~ refs/tags/* ]]; then
-            # Do not include the starting 'v' of the version.
-            LABEL_VERSION=${VERSION:1}
-          fi
-          # Determine the Docker container tags.
-          TAGS="${{ env.DOCKER_IMAGE_NAME }}:${VERSION}"
-          if [[ $GITHUB_REF =~ refs/tags/* ]]; then
-            TAGS="$TAGS,${{ env.DOCKER_IMAGE_NAME }}:latest"
-          fi
-          TAGS="$TAGS,$(echo $TAGS | tr ',' '\n' | sed 's|^|ghcr.io/|' | tr '\n' ',')"
-          # Determine the release type.
-          if [[ $GITHUB_REF =~ refs/tags/* ]]; then
-              IS_RELEASE=yes
-              if [[ $GITHUB_REF =~ -pre\.[0-9]+ ]]; then
-                  RELEASE_TYPE="pre"
-              else
-                  RELEASE_TYPE="standard"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          TAGS="${IMAGE}:sha-${GITHUB_SHA:0:12}"
+          PUBLISH=false
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+            if [[ "$GITHUB_REF" == "refs/heads/$DEFAULT_BRANCH" ]]; then
+              TAGS="${TAGS},${IMAGE}:latest"
+              PUBLISH=true
+            elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              VERSION="${GITHUB_REF#refs/tags/v}"
+              if [[ ! "$VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+                echo "::error::Invalid Docker version tag."
+                exit 1
               fi
-          else
-              IS_RELEASE=no
-              RELEASE_TYPE="n/a"
+              TAGS="${TAGS},${IMAGE}:${VERSION}"
+              PUBLISH=true
+            fi
           fi
-          # Determine the Docker cache image.
-          name="${GITHUB_REPOSITORY#*/}"
-          name="${name#docker-}"
-          CACHE_IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/${name}:buildcache"
-          # Print results.
-          echo "::group::Results"
-          echo "Github reference: $GITHUB_REF"
-          echo "Release: $IS_RELEASE"
-          echo "Release type: $RELEASE_TYPE"
-          echo "Docker container version: $VERSION"
-          echo "Docker container version label: $LABEL_VERSION"
-          echo "Docker container tag(s): $TAGS"
-          echo "Docker cache image: $CACHE_IMAGE"
-          echo "::endgroup::"
-          # Export outputs.
-          echo "is_release=${IS_RELEASE}" >> $GITHUB_OUTPUT
-          echo "release_type=${RELEASE_TYPE}" >> $GITHUB_OUTPUT
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "label_version=${LABEL_VERSION}" >> $GITHUB_OUTPUT
-          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
-          echo "CACHE_IMAGE=${CACHE_IMAGE}" >> $GITHUB_ENV
-          #echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
 
-      - name: Setup QEMU
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
         with:
-          platforms: arm,arm64,ppc64le,mips64,s390x
+          platforms: arm,arm64
 
-      - name: Setup Docker Buildx
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Login to DockerHub
-        if: ${{ steps.prep.outputs.is_release == 'yes' }}
-        uses: docker/login-action@v4
+      - name: Build native smoke-test image
+        uses: docker/build-push-action@v6
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          context: .
+          file: Dockerfile.hanging
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: firefox-smoke:ci
+          cache-from: type=gha
 
-      - name: Login to GitHub Container Registry
+      - name: Check the running container
+        shell: bash
+        run: |
+          docker run -d --name firefox-smoke \
+            --shm-size=256m \
+            --memory=1g --cpus=1.5 --pids-limit=512 \
+            -p 127.0.0.1::5800 \
+            -e KEEP_APP_RUNNING=1 \
+            -e FF_OPEN_URL=about:blank \
+            -e DISPLAY_WIDTH=1280 \
+            -e DISPLAY_HEIGHT=720 \
+            firefox-smoke:ci
+          ADDRESS="$(docker port firefox-smoke 5800/tcp)"
+          READY=false
+          for attempt in {1..60}; do
+            if curl --silent --fail --max-time 2 "http://${ADDRESS}/" >/dev/null &&
+               docker exec firefox-smoke xdotool search --onlyvisible --class firefox >/dev/null 2>&1; then
+              READY=true
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$READY" != true ]]; then
+            echo "::error::Firefox or its web interface did not start."
+            exit 1
+          fi
+          docker exec firefox-smoke sh -c \
+            'test -L /etc/machine-id && test -x /etc/services.d/firefox-logrotate/run && test -f /config/profile/prefs.js'
+          docker stats --no-stream \
+            --format 'CPU={{.CPUPerc}} MEM={{.MemUsage}} PIDS={{.PIDs}}' firefox-smoke
+          docker stop --timeout 30 firefox-smoke
+          if [[ "$(docker inspect --format '{{.State.OOMKilled}}' firefox-smoke)" != false ]]; then
+            echo "::error::Firefox was killed by the memory limit."
+            exit 1
+          fi
+
+      - name: Clean up smoke-test container
+        if: always()
+        run: |
+          docker logs firefox-smoke 2>&1 || true
+          docker rm -f firefox-smoke 2>/dev/null || true
+
+      - name: Log in to GHCR
+        if: steps.prep.outputs.publish == 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and publish
         uses: docker/build-push-action@v6
         with:
-          push: ${{ steps.prep.outputs.is_release == 'yes' }}
-          provenance: false
-          platforms: ${{ env.PLATFORMS }}
+          context: .
+          file: Dockerfile.hanging
+          platforms: linux/amd64,linux/386,linux/arm/v7,linux/arm64/v8
+          push: ${{ steps.prep.outputs.publish == 'true' }}
           tags: ${{ steps.prep.outputs.tags }}
-          build-args: |
-            DOCKER_IMAGE_VERSION=${{ steps.prep.outputs.label_version }}
-          cache-from: type=registry,ref=${{ env.CACHE_IMAGE }}
-          cache-to: ${{ github.ref == 'refs/heads/master' && format('type=registry,ref={0},mode=max', env.CACHE_IMAGE) || '' }}
-
-      - name: Inspect
-        if: ${{ steps.prep.outputs.is_release == 'yes' }}
-        run: |
-          docker buildx imagetools inspect ${{ env.DOCKER_IMAGE_NAME }}:${{ steps.prep.outputs.version }}
-
-      - name: Checkout
-        uses: actions/checkout@v6
-        if: ${{ steps.prep.outputs.release_type == 'standard' }}
-
-      - name: Dockerhub description
-        if: ${{ steps.prep.outputs.release_type == 'standard' }}
-        uses: peter-evans/dockerhub-description@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-          repository: ${{ env.DOCKER_IMAGE_NAME }}
-          readme-filepath: DOCKERHUB.md
-
-  notification:
-    name: Notification
-    needs: [ build ]
-    runs-on: ubuntu-22.04
-    if: ${{ always() && github.event_name != 'pull_request' }}
-
-    steps:
-      - name: Pushover notification
-        uses: desiderati/github-action-pushover@v1
-        with:
-          job-status: ${{ needs.build.result }}
-          pushover-api-token: ${{ secrets.PUSHOVER_API_TOKEN }}
-          pushover-user-key: ${{ secrets.PUSHOVER_USER_KEY }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: ${{ steps.prep.outputs.publish == 'true' && 'type=gha,mode=max' || '' }}

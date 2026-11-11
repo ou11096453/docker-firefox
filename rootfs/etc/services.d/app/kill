@@ -8,17 +8,22 @@
 set -e # Exit immediately if a command exits with a non-zero status.
 set -u # Treat unset variables as an error.
 
-xdotool key "Escape"
-sleep 0.5
-xdotool key "ctrl+q"
+PID="${1:-}"
+case "$PID" in
+    ''|*[!0-9]*|0|1) exit 1 ;;
+esac
 
-for i in $(seq 1 10)
+WINDOW="$(xdotool search --onlyvisible --all --pid "$PID" --class firefox 2>/dev/null | head -n 1)"
+if [ -n "$WINDOW" ]; then
+    xdotool key --window "$WINDOW" "Escape" "ctrl+q" 2>/dev/null || true
+fi
+
+i=0
+while [ "$i" -lt 10 ]
 do
-    if ! ps | grep "/usr/lib/firefox/firefox" | grep -q -v grep
-    then
-        break
-    fi
+    kill -0 "$PID" 2>/dev/null || break
     sleep 0.5
+    i=$((i + 1))
 done
 
 # vim:ft=sh:ts=4:sw=4:et:sts=4

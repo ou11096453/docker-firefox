@@ -1,0 +1,16 @@
+ARG FIREFOX_BASE_IMAGE=jlesage/firefox:v26.09.1@sha256:302aa068dcfa46a2d248771c998f67377383554df8940252caef42b99c13eb65
+FROM ${FIREFOX_BASE_IMAGE}
+
+# Reuse the pinned upstream browser and GUI without rebuilding their toolchains.
+COPY rootfs/ /
+RUN \
+    chmod 755 \
+        /startapp.sh \
+        /etc/cont-init.d/55-firefox.sh \
+        /etc/cont-init.d/56-firefox-set-prefs-from-env.sh \
+        /etc/cont-env.d/FF_PREF_NOTIF_BACKEND \
+        /etc/cont-env.d/SUP_GROUP_IDS_INTERNAL_SND \
+        /etc/services.d/app/params \
+        /etc/services.d/app/kill \
+        /etc/services.d/firefox-logrotate/run && \
+    ln -snf /config/machine-id /etc/machine-id

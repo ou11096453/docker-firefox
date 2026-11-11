@@ -1,0 +1,9 @@
+**
+!Dockerfile
+!Dockerfile.hanging
+!membarrier_check.c
+!rootfs/
+!rootfs/**
+!src/
+!src/**
+rootfs/etc/machine-id

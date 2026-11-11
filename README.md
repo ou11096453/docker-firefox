@@ -40,6 +40,7 @@ Foundation and its subsidiary, Mozilla Corporation.
       * [Ports](#ports)
       * [Changing Parameters of a Running Container](#changing-parameters-of-a-running-container)
       * [Docker Compose File](#docker-compose-file)
+   * [Persistent Web Pages](#persistent-web-pages)
    * [Docker Image Versioning and Tags](#docker-image-versioning-and-tags)
    * [Docker Image Update](#docker-image-update)
       * [Synology](#synology)
@@ -155,7 +156,7 @@ the `-e` parameter in the format `<VARIABLE_NAME>=<VALUE>`.
 |`ENABLE_CJK_FONT`| When set to `1`, installs the open-source font `WenQuanYi Zen Hei`, supporting a wide range of Chinese/Japanese/Korean characters. | `0` |
 |`FF_OPEN_URL`| The URL to open when Firefox starts. Multiple URLs can be opened by separating them with the pipe character (`|`). | (no value) |
 |`FF_KIOSK`| Set to `1` to enable kiosk mode. This mode launches Firefox in a very restricted and limited mode best suitable for public areas or customer-facing displays. | `0` |
-|`FF_CUSTOM_ARGS`| Custom argument(s) to pass when launching Firefox. | (no value) |
+|`FF_CUSTOM_ARGS`| Custom argument(s) to pass when launching Firefox. Quotes and escaped spaces are supported; shell expansion and execution are not. Empty arguments and line breaks are rejected. | (no value) |
 
 #### Deployment Considerations
 
@@ -260,6 +261,76 @@ services:
     volumes:
       - "/docker/appdata/firefox:/config:rw"
 ```
+
+## Persistent Web Pages
+
+本分支的 `Dockerfile.hanging` 基于固定的官方镜像 `jlesage/firefox:v26.09.1`
+及其 Docker Hub manifest SHA256，只叠加启动脚本修复，不重新编译 Firefox、
+NSPR 和 GUI。原始 `Dockerfile` 保留为完整源码构建入口。
+
+本地构建和启动：
+
+```shell
+docker compose up -d --build
+```
+
+默认只监听宿主机 `127.0.0.1:5800`。可选配置见 `.env.example`；
+`FF_OPEN_URL` 用 `|` 分隔多个网页。`/config` 使用命名卷，保存浏览器配置、
+登录状态及扩展。不要用 `docker compose down --volumes`，除非确实要删除这些数据。
+
+### GitHub 构建
+
+推送到仓库默认分支后，Actions 会先运行脚本测试、校验 Compose，再执行
+amd64 容器启动检查。全部通过后，发布四种架构的
+`ghcr.io/<仓库所有者>/<仓库名>:latest` 和 `:sha-<提交前12位>`。
+推送 `v*` 标签会发布去掉开头 `v` 的版本标签，不覆盖 `latest`；
+普通分支和 PR 只验证、构建，不发布。
+
+使用仓库自动提供的 `GITHUB_TOKEN`，不需要原作者的 Docker Hub 或 Pushover
+密钥。组织策略可能限制包写入；首次发布后，按需求设置 GHCR 包的访问权限。
+私有包需要部署端具备拉取权限，不要把凭据写入 Compose、仓库或启动参数。
+
+部署已经发布的镜像时，将 `.env` 中的 `FIREFOX_IMAGE` 设置为对应 GHCR 镜像：
+
+```shell
+docker compose pull
+docker compose up -d --no-build
+```
+
+### 定时刷新与移动端
+
+定时刷新由 Firefox 扩展负责，本分支不额外启动刷新进程。在容器内的 Firefox
+中安装所需的已签名扩展并配置计时；保持 `FF_KIOSK=0` 便于管理扩展。
+是否刷新后台标签、容器重启后是否恢复任务，需按选用扩展实际验证。
+关闭手机或电脑上的远程访问页面，不等于关闭容器内的 Firefox。
+
+手机访问时，在左侧控制面板将 **Scaling Mode** 设置为 **Remote Scaling**。
+它改变容器内 Firefox 窗口的尺寸，让支持响应式布局的网站按较窄视口排版；
+**Local Scaling** 只缩小画面。Remote Scaling 不改变浏览器 User-Agent，
+也不能修复第三方网站自身不支持移动布局的问题。该设置需在各客户端选择。
+
+### 资源与安全
+
+Compose 默认采用 1280×720、1.5 CPU 上限、1 GiB 内存上限和 256 MiB
+共享内存，关闭音频、文件管理器、Web 终端及外部 VNC 端口。内存上限不是
+实际占用承诺；共享内存也计入容器内存，复杂网页、多标签或视频需要调高上限。
+`KEEP_APP_RUNNING=1` 会重启退出的 Firefox；健康检查只检测可见窗口，
+Docker 不会仅因为 `unhealthy` 状态自动重启容器。
+
+Firefox 文件日志每 300 秒检查一次，超过 1 MiB 时轮转，保留两份压缩历史；
+Docker 控制台日志另设 10 MiB × 2。检查间隔内文件仍可能超过阈值。
+
+不要直接将未认证的 HTTP 界面暴露到公网。需要开放给手机或外部网络时，
+先在默认的本地访问模式下创建密码哈希：
+
+```shell
+docker compose exec firefox webauth-user add your-user
+```
+
+工具会交互式询问密码。然后设置 `SECURE_CONNECTION=1`、
+`WEB_AUTHENTICATION=1`，配置可信证书，并将 `FIREFOX_BIND_IP` 调整为所需的
+宿主机地址后重建容器。不要将明文密码配置为环境变量；反向代理需转发 WebSocket。
+本分支未关闭 Firefox 沙箱，也不要求 `privileged` 或 `seccomp=unconfined`。
 
 ## Docker Image Versioning and Tags
 
@@ -912,6 +983,11 @@ example:
 ```
 -e "FF_PREF_HTTP_PROXY=network.proxy.http=UNSET"
 ```
+
+Values are validated before the preference file is replaced. Preference names are
+matched literally, and duplicate names in separate environment variables are
+rejected. Strings must use JSON-compatible escaping, and integers must fit the
+signed 32-bit range.
 
 **NOTE**: This is an advanced usage and it is recommended to set preferences
 via Firefox directly.

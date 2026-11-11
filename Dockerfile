@@ -111,6 +111,19 @@ COPY --from=nspr /tmp/nspr-install/usr/lib/libnspr4.so* /usr/lib/
 COPY --from=nspr /tmp/nspr-install/usr/lib/libplc4.so* /usr/lib/
 COPY --from=nspr /tmp/nspr-install/usr/lib/libplds4.so* /usr/lib/
 
+# Preserve Linux entry points and the symlink when built from a Windows checkout.
+RUN \
+    chmod 755 \
+        /startapp.sh \
+        /etc/cont-init.d/55-firefox.sh \
+        /etc/cont-init.d/56-firefox-set-prefs-from-env.sh \
+        /etc/cont-env.d/FF_PREF_NOTIF_BACKEND \
+        /etc/cont-env.d/SUP_GROUP_IDS_INTERNAL_SND \
+        /etc/services.d/app/params \
+        /etc/services.d/app/kill \
+        /etc/services.d/firefox-logrotate/run && \
+    ln -snf /config/machine-id /etc/machine-id
+
 # Set internal environment variables.
 RUN \
     set-cont-env APP_NAME "Firefox" && \

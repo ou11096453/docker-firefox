@@ -24,11 +24,6 @@ fi
 for LOG_FILE in /config/log/firefox/output.log /config/log/firefox/error.log
 do
     touch "$LOG_FILE"
-
-    # Make sure the file doesn't grow indefinitely.
-    if [ "$(stat -c %s "$LOG_FILE")" -gt 1048576 ]; then
-       echo > "$LOG_FILE"
-    fi
 done
 
 # vim:ft=sh:ts=4:sw=4:et:sts=4

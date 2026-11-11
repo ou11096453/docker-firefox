@@ -1,6 +1,7 @@
 #!/bin/sh
 
 set -e
+set -u
 
 PREF_FILE="${1:-/config/profile/prefs.js}"
 
@@ -9,39 +10,24 @@ if [ -z "$PREF_FILE" ]; then
     exit 1
 fi
 
+if [ -L "$PREF_FILE" ] || { [ -e "$PREF_FILE" ] && [ ! -f "$PREF_FILE" ]; }; then
+    echo "ERROR: Preference file must be a regular file." >&2
+    exit 1
+fi
+
 mkdir -p "$(dirname "$PREF_FILE")"
-[ -f "$PREF_FILE" ] || touch "$PREF_FILE"
+TEMP_FILE="$(mktemp "$PREF_FILE.tmp.XXXXXX")"
+trap 'rm -f "$TEMP_FILE"' 0
+trap 'exit 1' 1 2 15
 
-env | grep "^FF_PREF_" | while read -r ENV
-do
-    ENAME="$(echo "$ENV" | cut -d '=' -f1)"
-    EVAL="$(echo "$ENV" | cut -d '=' -f2-)"
+INPUT_FILE=/dev/null
+if [ -f "$PREF_FILE" ]; then
+    INPUT_FILE="$PREF_FILE"
+    cp -p "$PREF_FILE" "$TEMP_FILE"
+fi
 
-    if [ -z "$EVAL" ]; then
-        echo "Skipping environment variable '$ENAME': no value set."
-        continue
-    fi
-
-    if echo "$EVAL" | grep -q "="; then
-        PNAME="$(echo "$EVAL" | cut -d '=' -f1)"
-        PVAL="$(echo "$EVAL" | cut -d '=' -f2-)"
-        [ -n "$PVAL" ] || PVAL='""'
-    else
-        PNAME="$EVAL"
-        PVAL='""'
-    fi 
-
-    if [ "$PVAL" = "UNSET" ]; then
-        echo "Removing preference '$PNAME'..."
-        sed -i "/user_pref(\"$PNAME\",.*);/d" "$PREF_FILE"
-    elif grep -q "user_pref(\"$PNAME\"," "$PREF_FILE"; then
-        echo "Setting preference '$PNAME'..."
-        sed -i "/user_pref(\"$PNAME\",.*);/d" "$PREF_FILE"
-        echo "user_pref(\"$PNAME\", $(echo "$PVAL" | sed 's|\\|\\\\|g'));" >> "$PREF_FILE"
-    else
-        echo "Setting new preference '$PNAME'..."
-        echo "user_pref(\"$PNAME\", $(echo "$PVAL" | sed 's|\\|\\\\|g'));" >> "$PREF_FILE"
-    fi
-done
+# Keep the original file and its metadata intact until all values are valid.
+awk -f /usr/share/firefox-tools/set-prefs.awk "$INPUT_FILE" > "$TEMP_FILE"
+mv -f "$TEMP_FILE" "$PREF_FILE"
 
 # vim:ft=sh:ts=4:sw=4:et:sts=4

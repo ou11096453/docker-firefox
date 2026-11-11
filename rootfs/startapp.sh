@@ -6,8 +6,9 @@ set -u # Treat unset variables as an error.
 PIDS=
 
 notify() {
-    for N in $(ls /etc/logmonitor/targets.d/*/send)
+    for N in /etc/logmonitor/targets.d/*/send
     do
+       [ -x "$N" ] || continue
        "$N" "$1" "$2" "$3" &
        PIDS="$PIDS $!"
     done

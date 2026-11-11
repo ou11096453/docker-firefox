@@ -83,6 +83,11 @@ app:
           -e "FF_PREF_HTTP_PROXY=network.proxy.http=UNSET"
           ```
 
+          Values are validated before the preference file is replaced. Preference
+          names are matched literally, and duplicate names in separate environment
+          variables are rejected. Strings must use JSON-compatible escaping, and
+          integers must fit the signed 32-bit range.
+
           **NOTE**: This is an advanced usage and it is recommended to set preferences
           via {{ app.friendly_name }} directly.
       - title: Troubleshooting
@@ -601,6 +606,8 @@ container:
     - name: FF_CUSTOM_ARGS
       description: >-
         Custom argument(s) to pass when launching {{ app.friendly_name }}.
+        Quotes and escaped spaces are supported; shell expansion and execution
+        are not. Empty arguments and line breaks are rejected.
       type: public
       unraid_template:
         title: "Custom Arguments"
