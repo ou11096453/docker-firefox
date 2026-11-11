@@ -121,7 +121,8 @@ RUN \
         /etc/cont-env.d/SUP_GROUP_IDS_INTERNAL_SND \
         /etc/services.d/app/params \
         /etc/services.d/app/kill \
-        /etc/services.d/firefox-logrotate/run && \
+        /etc/services.d/firefox-logrotate/run \
+        /usr/share/firefox-tools/healthcheck.sh && \
     ln -snf /config/machine-id /etc/machine-id
 
 # Set internal environment variables.

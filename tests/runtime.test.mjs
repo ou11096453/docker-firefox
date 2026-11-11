@@ -206,6 +206,7 @@ test("all runtime shell entry points pass the shell syntax check", () => {
         "rootfs/etc/services.d/app/params",
         "rootfs/etc/services.d/app/kill",
         "rootfs/etc/services.d/firefox-logrotate/run",
+        "rootfs/usr/share/firefox-tools/healthcheck.sh",
         "src/nspr/build.sh",
     ]) {
         const result = spawnSync(shell, ["-n"], {
@@ -221,6 +222,7 @@ test("both build paths restore executable scripts and the machine-id symlink", (
         const contents = readFileSync(path.join(root, dockerfile), "utf8");
         assert.match(contents, /chmod 755/);
         assert.ok(contents.includes("/etc/services.d/firefox-logrotate/run"));
+        assert.ok(contents.includes("/usr/share/firefox-tools/healthcheck.sh"));
         assert.ok(contents.includes("ln -snf /config/machine-id /etc/machine-id"));
     }
     const dockerignore = readFileSync(path.join(root, ".dockerignore"), "utf8");
@@ -252,6 +254,42 @@ kill() { return 1; }
         "key --window 42 Escape ctrl+q",
     ]);
     assert.notEqual(run("rootfs/etc/services.d/app/kill", {}, ["1"]).status, 0);
+});
+
+function healthcheck(snapshot, display = "") {
+    const { file } = fixture(snapshot);
+    return run("rootfs/usr/share/firefox-tools/healthcheck.sh", { DISPLAY: display }, [file], `
+xdotool() { printf '%s|%s\\n' "$DISPLAY" "$*"; }
+`);
+}
+
+test("healthcheck uses the display selected during container initialization", () => {
+    const result = healthcheck('export DISPLAY=":3.0"\n');
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, ":3.0|search --onlyvisible --class firefox\n");
+});
+
+test("healthcheck respects an explicitly configured display", () => {
+    const result = healthcheck("", ":7");
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, ":7|search --onlyvisible --class firefox\n");
+});
+
+test("healthcheck never evaluates commands in the environment snapshot", () => {
+    const { directory } = fixture();
+    const sentinel = path.join(directory, "unexpected").replaceAll("\\", "/");
+    const result = healthcheck(`export OTHER="$(touch '${sentinel}')"\nexport DISPLAY=":2"\n`);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(existsSync(sentinel), false);
+    assert.equal(result.stdout, ":2|search --onlyvisible --class firefox\n");
+});
+
+test("healthcheck rejects missing or malformed initialized displays", () => {
+    for (const snapshot of ["", 'export DISPLAY=":0"; echo injected\n', 'export DISPLAY="$(echo :0)"\n']) {
+        const result = healthcheck(snapshot);
+        assert.notEqual(result.status, 0);
+        assert.equal(result.stdout, "");
+    }
 });
 
 const workflow = readFileSync(path.join(root, ".github/workflows/build-image.yml"), "utf8");

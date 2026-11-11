@@ -100,7 +100,7 @@ jobs:
           READY=false
           for attempt in {1..60}; do
             if curl --silent --fail --max-time 2 "http://${ADDRESS}/" >/dev/null &&
-               docker exec firefox-smoke xdotool search --onlyvisible --class firefox >/dev/null 2>&1; then
+               docker exec firefox-smoke /usr/share/firefox-tools/healthcheck.sh >/dev/null 2>&1; then
               READY=true
               break
             fi
@@ -112,6 +112,7 @@ jobs:
           fi
           docker exec firefox-smoke sh -c \
             'test -L /etc/machine-id && test -x /etc/services.d/firefox-logrotate/run && test -f /config/profile/prefs.js'
+          docker exec --user 1000:1000 firefox-smoke /etc/services.d/firefox-logrotate/run
           docker stats --no-stream \
             --format 'CPU={{.CPUPerc}} MEM={{.MemUsage}} PIDS={{.PIDs}}' firefox-smoke
           docker stop --timeout 30 firefox-smoke
@@ -124,6 +125,7 @@ jobs:
         if: always()
         run: |
           docker logs firefox-smoke 2>&1 || true
+          docker exec firefox-smoke sh -c 'tail -n 80 /config/log/firefox/error.log' || true
           docker rm -f firefox-smoke 2>/dev/null || true
 
       - name: Log in to GHCR

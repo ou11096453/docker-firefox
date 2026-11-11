@@ -34,7 +34,7 @@ services:
       SECURE_CONNECTION: ${SECURE_CONNECTION:-0}
       WEB_AUTHENTICATION: ${WEB_AUTHENTICATION:-0}
     healthcheck:
-      test: ["CMD-SHELL", "xdotool search --onlyvisible --class firefox >/dev/null 2>&1"]
+      test: ["CMD", "/usr/share/firefox-tools/healthcheck.sh"]
       interval: 30s
       timeout: 5s
       start_period: 60s
