@@ -35,9 +35,10 @@ function run(script, environment = {}, args = [], prefix = "") {
 function params(environment) {
     const script = "rootfs/etc/services.d/app/params";
     const source = readFileSync(path.join(root, script), "utf8")
-        .replaceAll("/usr/share/firefox-tools", tools);
+        .replaceAll("/usr/share/firefox-tools", tools)
+        .replaceAll("is-bool-val-true", "is_bool_val_true");
     const result = spawnSync(shell, ["-s"], {
-        input: `is-bool-val-true() { [ "$1" = 1 ]; }\n${source}`,
+        input: `is_bool_val_true() { [ "$1" = 1 ]; }\n${source}`,
         encoding: "utf8",
         env: { ...baseEnvironment, ...environment },
         cwd: root,
